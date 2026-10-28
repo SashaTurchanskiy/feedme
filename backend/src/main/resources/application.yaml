@@ -1,0 +1,75 @@
+spring:
+  application:
+    name: feedme
+
+datasource:
+  url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3307/feedme?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true}
+  username: ${SPRING_DATASOURCE_USERNAME:feedme}
+  password: ${SPRING_DATASOURCE_PASSWORD:feedme}
+  driver-class-name: com.mysql.cj.jdbc.Driver
+  hikari:
+    pool-name: FeedMePool
+    maximum-pool-size: 20
+    minimum-idle: 5
+    idle-timeout: 300000
+    connection-timeout: 20000
+    max-lifetime: 1200000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      repositories:
+        enabled: true
+      timeout: 2s          # read/command timeout
+      connect-timeout: 2s  # connect timeout
+
+feed:
+  async:
+    enabled: true
+
+    stream:
+      key: feed:events
+
+    publisher:
+      batch-size: 100
+      max-attempts: 10
+      fixed-delay-ms: 1000
+
+    consumer:
+      group: feed-workers
+      name: worker-1
+      batch-size: 100
+      max-processing-attempts: 5
+      dlq-stream-key: feed:events:dlq
+      reclaim-enabled: true
+      reclaim-fixed-delay-ms: 5000
+      reclaim-idle-ms: 30000
+      reclaim-batch-size: 50
+      fixed-delay-ms: 1000
+      recover-fixed-delay-ms: 5000
+
+management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        feedme.feed.home.latency: true
+        feedme.posts.create.latency: true
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  prometheus:
+    metrics:
+      export:
+        enabled: true
