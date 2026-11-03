@@ -89,8 +89,45 @@ public class FeedMetricsService {
                 .record(normalizedPageSize);
     }
 
-    public void recordHomeFeedCacheLookup(String outcome){
+    public void recordHomeFeedCacheLookup(String outcome) {
         meterRegistry.counter("feedme.feed.home.cache_lookup", "outcome", outcome).increment();
     }
+
+    public void recordHomeFeedMerge(String mode, int baseItemsUsed, int hotItemUsed) {
+        meterRegistry.counter("feedme.feed.home.merge", "mode", mode);
+
+        meterRegistry.summary("feedme.feed.home.merge.base_items").record(baseItemsUsed);
+        meterRegistry.summary("feedme.feed.home.merge.hot_items").record(hotItemUsed);
+    }
+
+    public void recordFollowRequest(long startedAtNanos, String action, boolean createdRelation){
+        Timer.builder("feedme.follows.latency")
+                .description("Follow and unfollow request latency")
+                .tag("action", action)
+                .tag("change_state", String.valueOf(createdRelation))
+                .register(meterRegistry)
+                .record(System.nanoTime() - startedAtNanos, TimeUnit.NANOSECONDS);
+
+        Counter.builder("feedme.follows.requests")
+                .description("Fellow and unfollow requests")
+                .tag("action", action)
+                .tag("change_state", String.valueOf(createdRelation))
+                .register(meterRegistry)
+                .increment();
+    }
+
+    public void recordServiceError(String operation, String statusCode){
+        Counter.builder("feedme.service.errors")
+                .description("Service-level errors by operation and status code")
+                .tag("operation", operation)
+                .tag("status", statusCode)
+                .register(meterRegistry)
+                .increment();
+    }
+
+    public void recordDeliveryPath(String deliveryPath){
+        meterRegistry.counter("feedme.feed.delivery.path", "path", deliveryPath).increment();
+    }
+
 
 }
