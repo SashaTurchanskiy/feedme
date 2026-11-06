@@ -1,7 +1,6 @@
 package com.shahbytes.feedme.services.impl;
 
 import com.shahbytes.feedme.dtos.TimeLinePageResponse;
-import com.shahbytes.feedme.services.FeedMetricsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -45,7 +44,12 @@ public class FeedCacheService {
         return "feed:home:" + userId;
     }
 
-    public void cacheHomeFeed(TimeLinePageResponse timelinePageResponse) {
+    private void cacheHomeFeed(TimeLinePageResponse timeLinePageResponse){
+        writeHomeFeed(timeLinePageResponse);
+        feedMetricsService.recordCacheMutation("write_first_feed");
+    }
+
+    public void writeHomeFeed(TimeLinePageResponse timelinePageResponse) {
        try {
            String payload = objectMapper.writeValueAsString(timelinePageResponse);
            redisTemplate.opsForValue().set(

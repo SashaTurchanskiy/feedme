@@ -1,4 +1,4 @@
-package com.shahbytes.feedme.services;
+package com.shahbytes.feedme.services.impl;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
@@ -127,6 +127,10 @@ public class FeedMetricsService {
 
     public void recordDeliveryPath(String deliveryPath){
         meterRegistry.counter("feedme.feed.delivery.path", "path", deliveryPath).increment();
+    }
+
+    public void recordCacheMutation(String action){
+        meterRegistry.counter("feedme.feed.cache.mutation", "action", action).increment();
     }
 
 
