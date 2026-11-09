@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 
 public interface PostRepository extends JpaRepository<Post, String> {
 
@@ -28,5 +29,7 @@ public interface PostRepository extends JpaRepository<Post, String> {
                                            @Param("createdAt") Instant createdAt,
                                            @Param("postId") String postId,
                                            Pageable pageable);
+
+    long countByAuthor_IdIn(Set<String> nonHotAuthorIds);
 
 }
