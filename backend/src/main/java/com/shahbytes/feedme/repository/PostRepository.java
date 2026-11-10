@@ -1,6 +1,7 @@
 package com.shahbytes.feedme.repository;
 
 import com.shahbytes.feedme.models.Post;
+import com.shahbytes.feedme.services.impl.FeedCursorCodec;
 import io.lettuce.core.dynamic.annotation.Param;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -18,6 +19,9 @@ public interface PostRepository extends JpaRepository<Post, String> {
     List<Post> findByAuthor_IdInOrderByCreatedAtDescIdDesc(Collection<String> authorIds, Pageable pageable);
 
     @EntityGraph(attributePaths = "author")
+    List<Post> findByAuthor_IdOrderByCreatedAtDescIdDesc(String authorId, Pageable pageable);
+
+    @EntityGraph(attributePaths = "author")
     @Query("""
                  select p from Post p
                      where p.author.id in :authorIds
@@ -32,4 +36,19 @@ public interface PostRepository extends JpaRepository<Post, String> {
 
     long countByAuthor_IdIn(Set<String> nonHotAuthorIds);
 
+    @EntityGraph(attributePaths = "author")
+    @Query("""
+                 select p from Post p
+                     where p.author.id = :authorId
+                         and (p.createdAt < :createdAt
+                             or (p.createdAt = :createdAt and p.id < :postId))
+                                         order by p.createdAt desc, p.id desc
+            """)
+    List<Post> findUserFeedPageAfterCursor(
+            @Param("authorId") String authorId,
+            @Param("createdAt") Instant createdAt,
+            @Param("postId") String postId,
+            Pageable pageable);
+
+    long countByAuthorId(String userId);
 }

@@ -41,7 +41,7 @@ public class FeedServiceImpl implements FeedService {
 
     @Override
     public TimeLinePageResponse getHomeFeed(String userId, String cursor, int limit) {
-        long startedAtNanos = feedMetricsService.stratTime();
+        long startedAtNanos = feedMetricsService.startTime();
         int pageSize = normalizeLimit(limit);
         feedMetricsService.recordHomeFeedRequestedPageSize(limit, pageSize);
 
@@ -289,7 +289,7 @@ public class FeedServiceImpl implements FeedService {
             return postRepository.findByAuthor_IdInOrderByCreatedAtDescIdDesc(authorIds, pageRequest);
         }
         return postRepository.findHomeFeedPageAfterCursor(
-                authorIds, pageCursor.createdAt(), pageCursor.postedId(), pageRequest);
+                authorIds, pageCursor.createdAt(), pageCursor.postId(), pageRequest);
     }
 
     private Optional<FeedSlice> getCachedNormalHomeFeedSlice(String userId,
@@ -361,6 +361,62 @@ public class FeedServiceImpl implements FeedService {
     public UserProfile getUser(String userId) {
         return upRepository.findById(userId)
                 .orElseThrow(()-> new ResponseStatusException(HttpStatus.BAD_REQUEST,"User not found"));
+    }
+
+    @Override
+    public TimeLinePageResponse getUserFeed(String userId, String cursor, int limit) {
+        long startedAtNanos = feedMetricsService.startTime();
+        int pageSize = normalizeLimit(limit);
+
+        feedMetricsService.recordUserFeedRequestedPageSize(limit, pageSize);
+
+        try {
+            getUser(userId);
+
+            FeedCursorCodec.FeedCursor pageCursor = FeedCursorCodec.parse(cursor);
+            List<Post> posts = fetchUserFeedPosts(userId, pageCursor, pageSize + 1);
+            int totalItems = Math.toIntExact(postRepository.countByAuthorId(userId));
+            TimeLinePageResponse response = buildTimelinePage(
+                    userId, TimelineMode.USER, posts, totalItems, pageSize
+            );
+
+            feedMetricsService.recordUserFeedRequest(startedAtNanos,
+                    response.nextCursor() != null, response.items().size());
+            return response;
+
+        }catch (ResponseStatusException ex){
+            feedMetricsService.recordServiceError(
+                    "get_user_feed",
+                    ex.getStatusCode().toString()
+            );
+            throw ex;
+        }
+    }
+
+    private TimeLinePageResponse buildTimelinePage(String timelineOwnerId, TimelineMode mode,
+                                                   List<Post> posts, int totalItems, int pageSize) {
+        boolean hasMore = posts.size() > pageSize;
+        List<Post> pagePost = hasMore ? posts.subList(0, pageSize) : posts;
+
+        List<FeedItemResponse> pageItems = pagePost.stream()
+                .map(post -> toFeedItem(post, timelineOwnerId, Set.of(timelineOwnerId)))
+                .toList();
+
+        String nextCursor = hasMore && !pageItems.isEmpty()
+                ? FeedCursorCodec.encode(pageItems.get(pageItems.size() -1))
+                : null;
+
+        return new TimeLinePageResponse(timelineOwnerId, mode, totalItems, pageItems, nextCursor);
+    }
+
+    private List<Post> fetchUserFeedPosts(String userId, FeedCursorCodec.FeedCursor pageCursor, int fetchSize){
+        PageRequest pageRequest = PageRequest.of(0, fetchSize);
+        if (pageCursor == null){
+            return postRepository.findByAuthor_IdOrderByCreatedAtDescIdDesc(userId, pageRequest);
+        }
+
+        return postRepository.findUserFeedPageAfterCursor(userId, pageCursor.createdAt(), pageCursor.postId(),
+        pageRequest);
     }
 
     private int normalizeLimit(int limit) {

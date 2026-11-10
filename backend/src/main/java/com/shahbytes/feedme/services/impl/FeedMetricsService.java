@@ -15,7 +15,7 @@ public class FeedMetricsService {
 
     private final MeterRegistry meterRegistry;
 
-    public long stratTime(){
+    public long startTime(){
         return System.nanoTime();
     }
 

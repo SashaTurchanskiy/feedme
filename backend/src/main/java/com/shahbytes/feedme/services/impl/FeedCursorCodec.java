@@ -42,7 +42,7 @@ public class FeedCursorCodec {
         return createAt.toEpochMilli() + SEPARATOR + postId;
     }
 
-    record FeedCursor(Instant createdAt, String postedId){
+    record FeedCursor(Instant createdAt, String postId){
 
     }
 

@@ -7,4 +7,6 @@ public interface FeedService {
     TimeLinePageResponse getHomeFeed(String userId, String cursor, int limit);
 
     UserProfile getUser(String userId);
+
+    TimeLinePageResponse getUserFeed(String userId, String cursor, int limit);
 }
