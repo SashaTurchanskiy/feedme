@@ -3,6 +3,7 @@ package com.shahbytes.feedme.services.impl;
 import com.shahbytes.feedme.dtos.FeedItemResponse;
 import com.shahbytes.feedme.dtos.TimeLinePageResponse;
 import com.shahbytes.feedme.dtos.TimelineMode;
+import com.shahbytes.feedme.dtos.UserProfileResponse;
 import com.shahbytes.feedme.models.FollowRelation;
 import com.shahbytes.feedme.models.Post;
 import com.shahbytes.feedme.models.UserProfile;
@@ -13,6 +14,7 @@ import com.shahbytes.feedme.services.FeedService;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -391,6 +393,23 @@ public class FeedServiceImpl implements FeedService {
             );
             throw ex;
         }
+    }
+
+    @Override
+    public List<UserProfileResponse> getUsers() {
+        return upRepository.findAll(Sort.by("id")).stream()
+                .map(this::toUserProfileResponse)
+                .toList();
+    }
+
+    private UserProfileResponse toUserProfileResponse(UserProfile user) {
+        return new UserProfileResponse(
+                user.getId(),
+                user.getHandle(),
+                user.getName(),
+                user.getBio(),
+                user.isHotUser()
+        );
     }
 
     private TimeLinePageResponse buildTimelinePage(String timelineOwnerId, TimelineMode mode,
