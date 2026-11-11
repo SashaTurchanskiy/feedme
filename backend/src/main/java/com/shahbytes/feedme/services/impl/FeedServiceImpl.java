@@ -1,10 +1,8 @@
 package com.shahbytes.feedme.services.impl;
 
-import com.shahbytes.feedme.dtos.FeedItemResponse;
-import com.shahbytes.feedme.dtos.TimeLinePageResponse;
-import com.shahbytes.feedme.dtos.TimelineMode;
-import com.shahbytes.feedme.dtos.UserProfileResponse;
+import com.shahbytes.feedme.dtos.*;
 import com.shahbytes.feedme.models.FollowRelation;
+import com.shahbytes.feedme.models.FollowRelationId;
 import com.shahbytes.feedme.models.Post;
 import com.shahbytes.feedme.models.UserProfile;
 import com.shahbytes.feedme.repository.FollowRelationRepository;
@@ -400,6 +398,84 @@ public class FeedServiceImpl implements FeedService {
         return upRepository.findAll(Sort.by("id")).stream()
                 .map(this::toUserProfileResponse)
                 .toList();
+    }
+
+    @Override
+    public FollowingResponse getFollowing(String followerId) {
+        getUser(followerId);
+        List<String> targetUserIds = followRelationRepository.findByFollower_Id(followerId).stream()
+                .map(relation -> relation.getTargetUser().getId())
+                .toList();
+        return new FollowingResponse(followerId, targetUserIds, targetUserIds.size());
+    }
+
+    @Override
+    @Transactional
+    public FollowResponse follow(String followerId, String targetUserId) {
+        long startedAtNano = feedMetricsService.startTime();
+        try {
+            validateFollowingRequest(followerId, targetUserId);
+
+            UserProfile follower = getUser(followerId);
+            UserProfile target = getUser(targetUserId);
+            FollowRelationId relationId = new FollowRelationId(followerId, targetUserId);
+
+            boolean createdRelation = false;
+
+            if (!followRelationRepository.existsById(relationId)){
+                followRelationRepository.save(new FollowRelation(follower, target));
+                createdRelation = true;
+            }
+
+            feedCacheService.evictHomeFeed(followerId);
+            feedMetricsService.recordFollowRequest(startedAtNano, "follow", createdRelation);
+            return new FollowResponse(followerId, targetUserId,
+                    true,
+                    Math.toIntExact(
+                            followRelationRepository.countByFollower_Id(followerId)
+                    )
+            );
+        }catch (ResponseStatusException ex){
+            feedMetricsService.recordServiceError(
+                    "follow", ex.getStatusCode().toString()
+            );
+            throw ex;
+        }
+    }
+
+    @Override
+    @Transactional
+    public FollowResponse unfollow(String followerId, String targetUserId) {
+        long startedAtNanos = feedMetricsService.startTime();
+
+        try {
+            validateFollowingRequest(followerId, targetUserId);
+            FollowRelationId relationId = new FollowRelationId(followerId, targetUserId);
+            boolean relationExisted = followRelationRepository.existsById(relationId);
+
+            followRelationRepository.deleteById(relationId);
+            feedCacheService.evictHomeFeed(followerId);
+            feedMetricsService.recordFollowRequest(startedAtNanos, "unfollow", relationExisted);
+
+            return new FollowResponse(followerId, targetUserId, false,
+                    Math.toIntExact(
+                            followRelationRepository.countByFollower_Id(followerId)
+                    ));
+        }catch (ResponseStatusException ex){
+            feedMetricsService.recordServiceError("unfollow", ex.getStatusCode().toString());
+            throw ex;
+        }
+    }
+
+    private void validateFollowingRequest(String followerId, String targetUserId) {
+        if (followerId.equals(targetUserId)){
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "User cannot follow themselves"
+            );
+        }
+        getUser(followerId);
+        getUser(targetUserId);
     }
 
     private UserProfileResponse toUserProfileResponse(UserProfile user) {

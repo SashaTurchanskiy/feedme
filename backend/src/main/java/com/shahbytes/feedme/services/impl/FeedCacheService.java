@@ -40,7 +40,7 @@ public class FeedCacheService {
 
     }
 
-    private Object homeFeedKey(String userId) {
+    private String homeFeedKey(String userId) {
         return "feed:home:" + userId;
     }
 
@@ -59,5 +59,15 @@ public class FeedCacheService {
        }catch (Exception e){
            log.info("Something went wrong with redis while caching userId {}, {}", timelinePageResponse.timelineOwnerId(), e.getMessage());
        }
+    }
+
+
+    public void evictHomeFeed(String userId){
+      try {
+          redisTemplate.delete(homeFeedKey(userId));
+          feedMetricsService.recordCacheMutation("evict");
+      }catch (Exception ex){
+          ex.printStackTrace();
+      }
     }
 }
