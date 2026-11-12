@@ -1,16 +1,15 @@
 package com.shahbytes.feedme.services.impl;
 
 import com.shahbytes.feedme.dtos.*;
-import com.shahbytes.feedme.models.FollowRelation;
-import com.shahbytes.feedme.models.FollowRelationId;
-import com.shahbytes.feedme.models.Post;
-import com.shahbytes.feedme.models.UserProfile;
+import com.shahbytes.feedme.models.*;
 import com.shahbytes.feedme.repository.FollowRelationRepository;
+import com.shahbytes.feedme.repository.PostCreationRequestRepository;
 import com.shahbytes.feedme.repository.PostRepository;
 import com.shahbytes.feedme.repository.UserProfileRepository;
 import com.shahbytes.feedme.services.FeedService;
 import lombok.RequiredArgsConstructor;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
@@ -18,9 +17,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+
+import static org.springframework.messaging.simp.SimpMessageHeaderAccessor.getUser;
 
 @Service
 @RequiredArgsConstructor
@@ -37,6 +41,7 @@ public class FeedServiceImpl implements FeedService {
     private final FollowRelationRepository followRelationRepository;
     private final FeedCacheService feedCacheService;
     private final PostRepository postRepository;
+    private final PostCreationRequestRepository postCreationRequestRepository;
 
 
     @Override
@@ -86,7 +91,7 @@ public class FeedServiceImpl implements FeedService {
         int hotItemUsed = 0;
 
         while (mergeItems.size() < pageSize + 1
-        && (normalIndex < normalSlice.items().size() ||
+                && (normalIndex < normalSlice.items().size() ||
                 hotIndex < hotSlice.items.size())
         ){
 
@@ -194,7 +199,7 @@ public class FeedServiceImpl implements FeedService {
                     Math.toIntExact(postRepository.countByAuthor_IdIn(nonHotAuthorIds)),
                     slice.items,
                     slice.hasMore && !slice.items.isEmpty()
-                    ? FeedCursorCodec.encode(
+                            ? FeedCursorCodec.encode(
                             slice.items().get(slice.items().size() -1)
                     )
                             :null
@@ -467,6 +472,135 @@ public class FeedServiceImpl implements FeedService {
         }
     }
 
+    @Override
+    public PostResponse createPost(String authorId, String content, String idempotencyKey) {
+        long startedAtNanos = feedMetricsService.startTime();
+        UserProfile author = getUser(authorId);
+        String authorType = author.isHotUser() ? "hot" : "normal";
+
+        String normalizedContent = content.trim();
+
+        try {
+            String requestHash = hashCreatePostRequest(authorId, normalizedContent);
+
+            IdempotencyPostAttempt attempt = resolveCreatePostAttempt(
+                    authorId, idempotencyKey, requestHash
+            );
+
+            if (attempt.replayedResponse().isPresent()){
+                feedMetricsService.recordPostCreation(startedAtNanos, authorType,
+                "reply");
+                return attempt.replayedResponse().get();
+            }
+            if (attempt.isProgress()){
+                feedMetricsService.recordPostCreation(startedAtNanos, authorType, "in_progress");
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Post creation already is progress");
+            }
+
+            Post post = postRepository.save(new Post(
+                    UUID.randomUUID().toString(),
+                    author,
+                    normalizedContent
+            ));
+
+            //feedEventOutboxService.enqueuePostCreated(post);
+
+            attempt.requestRecord.orElseThrow().markSucceeded(post.getId());
+
+            feedMetricsService.recordPostCreation(startedAtNanos, authorType, "new");
+
+            return toPostResponse(post);
+
+        }catch (ResponseStatusException ex){
+            if (ex.getStatusCode().equals(HttpStatus.CONFLICT)
+                    && ex.getReason() != null
+                    && ex.getReason().contains("Idempotency key")
+            ){
+                feedMetricsService.recordPostCreation(startedAtNanos, authorType, "conflict");
+            }
+            feedMetricsService.recordServiceError("create_post", ex.getStatusCode().toString());
+            throw ex;
+        }
+    }
+
+    private IdempotencyPostAttempt resolveCreatePostAttempt(String authorId, String idempotencyKey, String requestHash) {
+        Optional<PostCreationRequest> existingRequest =
+                postCreationRequestRepository.findByUserIdAndIdempotencyKey(authorId, idempotencyKey);
+
+        if (existingRequest.isPresent()) {
+            return handleExistingCreatePostRequest(existingRequest.get(), requestHash);
+        }
+
+        try {
+            PostCreationRequest entity = new PostCreationRequest(authorId, idempotencyKey, requestHash);
+            postCreationRequestRepository.saveAndFlush(entity);
+            return new IdempotencyPostAttempt(
+                    Optional.of(entity),
+                    Optional.empty(),
+                    false
+            );
+        } catch (DataIntegrityViolationException exception) {
+            // if we lost the race
+            PostCreationRequest existing = postCreationRequestRepository
+                    .findByUserIdAndIdempotencyKey(authorId, idempotencyKey)
+                    .orElseThrow(() -> exception);
+
+            return handleExistingCreatePostRequest(existing, requestHash);
+        }
+    }
+
+    private IdempotencyPostAttempt handleExistingCreatePostRequest(PostCreationRequest existing, String requestHash) {
+        PostCreationRequest validatedRecord = validateAndReuseCreatePostRequest(existing, requestHash);
+
+        return switch (validatedRecord.getStatus()) {
+            case SUCCEEDED -> new IdempotencyPostAttempt(Optional.empty(),
+                    Optional.of(getPost(validatedRecord.getPostId())), false);
+            case IN_PROGRESS -> new IdempotencyPostAttempt(Optional.empty(), Optional.empty(), true);
+        };
+    }
+
+    private PostResponse getPost(String postId) {
+        return postRepository.findById(postId)
+                .map(this::toPostResponse)
+                .orElseThrow(()-> new ResponseStatusException(HttpStatus.NOT_FOUND, "Post not found"));
+
+    }
+
+    private PostResponse toPostResponse(Post post) {
+        UserProfile author = post.getAuthor();
+        return new PostResponse(post.getId(), author.getId(), author.getHandle(),
+                author.getName(), post.getContent(),
+                post.getCreatedAt());
+    }
+
+    private PostCreationRequest validateAndReuseCreatePostRequest(PostCreationRequest existing, String requestHash) {
+        if (!existing.getRequestHash().equals(requestHash)){
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Idempotency key already used for a different post request");
+        }
+        return existing;
+    }
+
+
+    private String hashCreatePostRequest(String authorId, String normalizedContent) {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        }catch (NoSuchAlgorithmException ex){
+            throw new IllegalArgumentException("SHA-256 should be available");
+        }
+
+        byte[] hash = digest.digest((authorId + "\n" + normalizedContent).getBytes(StandardCharsets.UTF_8));
+        // 4byte => 4 * 8 bits
+
+        // 4 bits, 4bits, 4 bits, 4bits,4 bits, 4bits,4 bits, 4bits
+
+        StringBuilder builder = new StringBuilder(hash.length * 2);
+        for (byte hashByte : hash){
+            builder.append(String.format("%02x", hashByte));
+        }
+        return builder.toString();
+    }
+
     private void validateFollowingRequest(String followerId, String targetUserId) {
         if (followerId.equals(targetUserId)){
             throw new ResponseStatusException(
@@ -511,7 +645,7 @@ public class FeedServiceImpl implements FeedService {
         }
 
         return postRepository.findUserFeedPageAfterCursor(userId, pageCursor.createdAt(), pageCursor.postId(),
-        pageRequest);
+                pageRequest);
     }
 
     private int normalizeLimit(int limit) {
@@ -521,8 +655,8 @@ public class FeedServiceImpl implements FeedService {
         return Math.min(limit, 20);
     }
 
-    /*private record IdempotencyPostAttempt(Optional<PostCreationRequest> requestRecord,
-                                           Optional<PostResponse> replayedRepose, boolean isProgress){}*/
+    private record IdempotencyPostAttempt(Optional<PostCreationRequest> requestRecord,
+                                          Optional<PostResponse> replayedResponse, boolean isProgress){};
 
     private record VisibleAuthors(Set<String> allAuthorIds, Set<String> hotAuthorIds, Set<String> nonHotAuthorIds){ }
 
@@ -530,3 +664,4 @@ public class FeedServiceImpl implements FeedService {
 
     private record FeedSlice(List<FeedItemResponse> items, boolean hasMore){}
 }
+

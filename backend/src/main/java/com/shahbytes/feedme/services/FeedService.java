@@ -1,10 +1,9 @@
 package com.shahbytes.feedme.services;
 
-import com.shahbytes.feedme.dtos.FollowResponse;
-import com.shahbytes.feedme.dtos.FollowingResponse;
-import com.shahbytes.feedme.dtos.TimeLinePageResponse;
-import com.shahbytes.feedme.dtos.UserProfileResponse;
+import com.shahbytes.feedme.dtos.*;
 import com.shahbytes.feedme.models.UserProfile;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 import java.util.List;
 
@@ -22,4 +21,6 @@ public interface FeedService {
     FollowResponse follow(String followerId, String targetUserId);
 
     FollowResponse unfollow(String followerId, String targetUserId);
+
+    PostResponse createPost(String authorId, String content, String idempotencyKey);
 }

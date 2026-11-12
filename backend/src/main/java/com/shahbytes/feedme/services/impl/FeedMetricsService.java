@@ -133,5 +133,21 @@ public class FeedMetricsService {
         meterRegistry.counter("feedme.feed.cache.mutation", "action", action).increment();
     }
 
+    public void recordPostCreation(long startedAtNanos, String authorType, String idempotencyOutcome){
+        Timer.builder("feedme.posts.create.latency")
+                .description("Post creation latency")
+                .tag("author_type", authorType)
+                .tag("idempotency_outcome", idempotencyOutcome)
+                .register(meterRegistry)
+                .record(System.nanoTime() - startedAtNanos, TimeUnit.NANOSECONDS);
+
+        Counter.builder("feedme.posts.create.requests")
+                .description("Post creation requests")
+                .tag("author_type", authorType)
+                .tag("idempotency_outcome", idempotencyOutcome)
+                .register(meterRegistry)
+                .increment();
+    }
+
 
 }

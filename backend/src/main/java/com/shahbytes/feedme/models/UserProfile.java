@@ -28,4 +28,5 @@ public class UserProfile {
 
     @Column(nullable = false)
     private boolean hotUser;
+
 }
