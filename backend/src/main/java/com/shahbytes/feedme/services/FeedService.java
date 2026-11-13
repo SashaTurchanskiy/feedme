@@ -23,4 +23,6 @@ public interface FeedService {
     FollowResponse unfollow(String followerId, String targetUserId);
 
     PostResponse createPost(String authorId, String content, String idempotencyKey);
+
+    PostResponse getPost(String postId);
 }

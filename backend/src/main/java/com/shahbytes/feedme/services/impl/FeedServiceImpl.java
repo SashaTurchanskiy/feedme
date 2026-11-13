@@ -42,6 +42,7 @@ public class FeedServiceImpl implements FeedService {
     private final FeedCacheService feedCacheService;
     private final PostRepository postRepository;
     private final PostCreationRequestRepository postCreationRequestRepository;
+    private final FeedEventOutboxService feedEventOutboxService;
 
 
     @Override
@@ -503,7 +504,7 @@ public class FeedServiceImpl implements FeedService {
                     normalizedContent
             ));
 
-            //feedEventOutboxService.enqueuePostCreated(post);
+            feedEventOutboxService.enqueuePostCreated(post);
 
             attempt.requestRecord.orElseThrow().markSucceeded(post.getId());
 
@@ -559,7 +560,7 @@ public class FeedServiceImpl implements FeedService {
         };
     }
 
-    private PostResponse getPost(String postId) {
+    public PostResponse getPost(String postId) {
         return postRepository.findById(postId)
                 .map(this::toPostResponse)
                 .orElseThrow(()-> new ResponseStatusException(HttpStatus.NOT_FOUND, "Post not found"));
