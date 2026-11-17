@@ -66,7 +66,7 @@ public class FeedEventOutboxPublisher {
                 fields.put("postId", event.getPostId());
                 fields.put("authorId", event.getAuthorId());
                 fields.put("hotUser", String.valueOf(event.isHotUser()));
-                fields.put("occuredAtEppochMillis", String.valueOf(event.getOccurredAt().toEpochMilli()));
+                fields.put("occurredAtEpochMillis", String.valueOf(event.getOccurredAt().toEpochMilli()));
 
                 redisTemplate.opsForStream().add(MapRecord.create(streamKey, fields));
                 event.markPublished();
