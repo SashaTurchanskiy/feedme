@@ -567,6 +567,36 @@ public class FeedServiceImpl implements FeedService {
 
     }
 
+    @Override
+    public void processPostCreatedEvent(String postId) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(()-> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Post not found for async propagation"));
+        applyDeliveryStrategy(post);
+    }
+
+    private void applyDeliveryStrategy(Post post) {
+        if (post.getAuthor().isHotUser()){
+            feedMetricsService.recordDeliveryPath("hybrid_pull");
+            return;
+        }
+        feedMetricsService.recordDeliveryPath("fan_out_on_write");
+
+        for (String viewerId : getAffectedViewerIds(post.getAuthor().getId())) {
+            Set<String> visibleAuthorIds = getVisibleAuthors(getUser(viewerId)).allAuthorIds();
+            FeedItemResponse item = toFeedItem(post, viewerId, visibleAuthorIds);
+            feedCacheService.prependToHomeFeed(viewerId, item);
+        }
+    }
+
+    private Set<String> getAffectedViewerIds(String authorId) {
+        Set<String> viewerIds = new LinkedHashSet<>();
+        viewerIds.add(authorId);
+        followRelationRepository.findByTargetUser_Id(authorId)
+                .forEach(relation -> viewerIds.add(relation.getFollower().getId()));
+        return viewerIds;
+    }
+
     private PostResponse toPostResponse(Post post) {
         UserProfile author = post.getAuthor();
         return new PostResponse(post.getId(), author.getId(), author.getHandle(),

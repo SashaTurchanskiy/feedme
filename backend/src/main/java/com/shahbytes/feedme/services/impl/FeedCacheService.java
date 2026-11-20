@@ -1,5 +1,6 @@
 package com.shahbytes.feedme.services.impl;
 
+import com.shahbytes.feedme.dtos.FeedItemResponse;
 import com.shahbytes.feedme.dtos.TimeLinePageResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,6 +9,8 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -69,5 +72,40 @@ public class FeedCacheService {
       }catch (Exception ex){
           ex.printStackTrace();
       }
+    }
+
+
+    public void prependToHomeFeed(String userId, FeedItemResponse item) {
+        Optional<TimeLinePageResponse> cachedFeed = getHomeFeed(userId);
+        if (cachedFeed.isEmpty()) {
+            return;
+        }
+
+        TimeLinePageResponse existing = cachedFeed.get();
+
+        List<FeedItemResponse> updatedItems = new ArrayList<>();
+        updatedItems.add(item);
+
+        existing.items().stream()
+                .filter(existingItem -> !existingItem.postId().equals(item.postId()))
+                .forEach(updatedItems::add);
+
+        if (updatedItems.size() > DEFAULT_PAGE_SIZE) {
+            updatedItems = updatedItems.subList(0, DEFAULT_PAGE_SIZE);
+        }
+
+        writeHomeFeed(new TimeLinePageResponse(
+                existing.timelineOwnerId(),
+                existing.mode(),
+                existing.totalItems() + 1,
+                updatedItems,
+                existing.totalItems() + 1 > updatedItems.size()
+                        && !updatedItems.isEmpty()
+                        ? FeedCursorCodec.encode(updatedItems.get(updatedItems.size() - 1))
+                        : null
+        ));
+
+        feedMetricsService.recordCacheMutation("prepend");
+
     }
 }

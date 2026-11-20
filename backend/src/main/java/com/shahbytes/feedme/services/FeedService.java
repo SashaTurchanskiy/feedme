@@ -25,4 +25,6 @@ public interface FeedService {
     PostResponse createPost(String authorId, String content, String idempotencyKey);
 
     PostResponse getPost(String postId);
+
+    void processPostCreatedEvent(String postId);
 }

@@ -150,4 +150,11 @@ public class FeedMetricsService {
     }
 
 
+    public void recordAsyncWorkerDeadLetter(String operationName) {
+        meterRegistry.counter("feedme.feed.async.worker.dead_letter", "operation", operationName).increment();
+    }
+
+    public void recordAsyncWorkedRetry(String operationName) {
+        meterRegistry.counter("feedme.feed.async.worker.retries", "operation", operationName).increment();
+    }
 }
