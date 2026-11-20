@@ -1,5 +1,6 @@
 package com.shahbytes.feedme.config;
 
+import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -8,30 +9,28 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @Setter
 @ConfigurationProperties(prefix = "feed.async")
 public class FeedAsyncProperties {
-
     private boolean enabled;
     private final Stream stream = new Stream();
     private final Publisher publisher = new Publisher();
     private final Consumer consumer = new Consumer();
 
-
     @Getter
     @Setter
-    public static class Stream{
+    public static class Stream {
         private String key;
     }
 
     @Getter
     @Setter
-    public static class Publisher{
+    public static class Publisher {
         private int batchSize;
         private int maxAttempts;
-        private int fixedDelayMs;
+        private long fixedDelayMs;
     }
 
     @Getter
     @Setter
-    private static class Consumer{
+    public static class Consumer {
         private String group;
         private int batchSize;
         private String name;
@@ -40,9 +39,8 @@ public class FeedAsyncProperties {
         private boolean reclaimEnabled;
         private long reclaimFixedDelayMs;
         private long reclaimIdleMs;
-        private long reclaimBatchSize;
+        private int reclaimBatchSize;
         private long fixedDelayMs;
         private long recoverFixedDelayMs;
     }
-
 }
